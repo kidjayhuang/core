@@ -230,17 +230,19 @@ function createReadonlyMethod(type: TriggerOpTypes): Function {
 function createInstrumentations() {
   const mutableInstrumentations: Record<string, Function> = {
     get(this: MapTypes, key: unknown) {
+      // track
       return get(this, key)
     },
     get size() {
+      // track
       return size(this as unknown as IterableCollections)
     },
-    has,
-    add,
-    set,
-    delete: deleteEntry,
-    clear,
-    forEach: createForEach(false, false)
+    has, // track
+    add, // trigger
+    set, // trigger
+    delete: deleteEntry, // trigger
+    clear, // trigger
+    forEach: createForEach(false, false) // track
   }
 
   const shallowInstrumentations: Record<string, Function> = {

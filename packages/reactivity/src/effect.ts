@@ -211,20 +211,25 @@ export function resetTracking() {
 }
 
 export function track(target: object, type: TrackOpTypes, key: unknown) {
+  // 当前应该进行依赖收集 且 有对应的副作用函数时，才会进行依赖收集
   if (shouldTrack && activeEffect) {
+    // 从容器中取出【对应响应式数据对象】的依赖关系
     let depsMap = targetMap.get(target)
     if (!depsMap) {
+      // 若不存在，则进行初始化
       targetMap.set(target, (depsMap = new Map()))
     }
+    // 获取和对【应响应式数据对象 key】相匹配的依赖
     let dep = depsMap.get(key)
     if (!dep) {
+      // 若不存在，则进行初始化 dep 为 Set 实例
       depsMap.set(key, (dep = createDep()))
     }
 
     const eventInfo = __DEV__
       ? { effect: activeEffect, target, type, key }
       : undefined
-
+    // 往 dep 集合中添加 effect 依赖
     trackEffects(dep, eventInfo)
   }
 }

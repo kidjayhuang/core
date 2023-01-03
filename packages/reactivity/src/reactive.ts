@@ -89,9 +89,11 @@ export type UnwrapNestedRefs<T> = T extends Ref ? T : UnwrapRefSimple<T>
 export function reactive<T extends object>(target: T): UnwrapNestedRefs<T>
 export function reactive(target: object) {
   // if trying to observe a readonly proxy, return the readonly version.
+  // 若目标对象是响应式的只读数据，则直接返回
   if (isReadonly(target)) {
     return target
   }
+  // 否则将目标数据尝试变成响应式数据
   return createReactiveObject(
     target,
     false,
@@ -185,6 +187,7 @@ function createReactiveObject(
   collectionHandlers: ProxyHandler<any>,
   proxyMap: WeakMap<Target, any>
 ) {
+  // 非对象类型直接返回
   if (!isObject(target)) {
     if (__DEV__) {
       console.warn(`value cannot be made reactive: ${String(target)}`)
@@ -193,6 +196,7 @@ function createReactiveObject(
   }
   // target is already a Proxy, return it.
   // exception: calling readonly() on a reactive object
+  // 目标数据的 __v_raw 属性若为 true，且是【非响应式数据】或 不是通过调用 readonly() 方法，则直接返回
   if (
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
@@ -200,19 +204,24 @@ function createReactiveObject(
     return target
   }
   // target already has corresponding Proxy
+  // 目标对象已存在相应的 proxy 代理对象，则直接返回
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy
   }
   // only specific value types can be observed.
+  // 只有在白名单中的值类型才可以被代理监测，否则直接返回
   const targetType = getTargetType(target)
   if (targetType === TargetType.INVALID) {
     return target
   }
+  // 创建代理对象
   const proxy = new Proxy(
     target,
+    // 若目标对象是集合类型（Set、Map）则使用集合类型对应的捕获器，否则使用基础捕获器
     targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers
   )
+  // 将对应的代理对象存储在 proxyMap 中
   proxyMap.set(target, proxy)
   return proxy
 }
@@ -247,7 +256,7 @@ export function markRaw<T extends object>(value: T): Raw<T> {
   def(value, ReactiveFlags.SKIP, true)
   return value
 }
-
+// 若当前 value 是 对象类型，才会通过 reactive 转换为响应式数据
 export const toReactive = <T extends unknown>(value: T): T =>
   isObject(value) ? reactive(value) : value
 

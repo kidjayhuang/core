@@ -58,6 +58,8 @@ function createArrayInstrumentations() {
   // values
   ;(['includes', 'indexOf', 'lastIndexOf'] as const).forEach(key => {
     instrumentations[key] = function (this: unknown[], ...args: unknown[]) {
+      // 外部调用上述方法，默认其内的 this 指向的是代理数组对象，
+      // 但实际上是需要通过原始数组中进行遍历查找
       const arr = toRaw(this) as any
       for (let i = 0, l = this.length; i < l; i++) {
         track(arr, TrackOpTypes.GET, i + '')
@@ -94,6 +96,7 @@ function hasOwnProperty(key: string) {
 
 function createGetter(isReadonly = false, shallow = false) {
   return function get(target: Target, key: string | symbol, receiver: object) {
+    // 当直接通过指定 key 访问 vue 内置自定义的对象属性时，返回其对应的值
     if (key === ReactiveFlags.IS_REACTIVE) {
       return !isReadonly
     } else if (key === ReactiveFlags.IS_READONLY) {
@@ -114,37 +117,42 @@ function createGetter(isReadonly = false, shallow = false) {
     ) {
       return target
     }
-
+    // 判断是否为数组类型
     const targetIsArray = isArray(target)
-
+    // 数组对象
     if (!isReadonly) {
       if (targetIsArray && hasOwn(arrayInstrumentations, key)) {
+        // 重写/增强数组的方法：
+        //  - 查找方法：includes、indexOf、lastIndexOf
+        //  - 修改原数组的方法：push、pop、unshift、shift、splice
         return Reflect.get(arrayInstrumentations, key, receiver)
       }
       if (key === 'hasOwnProperty') {
         return hasOwnProperty
       }
     }
-
+    // 获取对应属性值
     const res = Reflect.get(target, key, receiver)
 
     if (isSymbol(key) ? builtInSymbols.has(key) : isNonTrackableKeys(key)) {
       return res
     }
-
+    // 依赖收集
     if (!isReadonly) {
       track(target, TrackOpTypes.GET, key)
     }
-
+    // 浅层响应
     if (shallow) {
       return res
     }
-
+    // 若是 ref 类型响应式数据，会进行【自动脱 ref】，但不支持【数组】+【索引】的访问方式
     if (isRef(res)) {
       // ref unwrapping - skip unwrap for Array + integer key.
       return targetIsArray && isIntegerKey(key) ? res : res.value
     }
-
+    // 属性值是对象类型：
+    //  - 是只读属性，则通过 readonly() 返回结果，
+    //  - 且是非只读属性，则递归调用 reactive 向外返回 proxy 代理对象
     if (isObject(res)) {
       // Convert returned value into a proxy as well. we do the isObject check
       // here to avoid invalid value warning. Also need to lazy access readonly
@@ -166,7 +174,9 @@ function createSetter(shallow = false) {
     value: unknown,
     receiver: object
   ): boolean {
+    // 保存旧的数据
     let oldValue = (target as any)[key]
+    // 若原数据值属于 只读 且 ref 类型，并且新数据值不属于 ref 类型，则意味着修改失败
     if (isReadonly(oldValue) && isRef(oldValue) && !isRef(value)) {
       return false
     }
@@ -182,20 +192,25 @@ function createSetter(shallow = false) {
     } else {
       // in shallow mode, objects are set as-is regardless of reactive or not
     }
-
+    // 是否存在对应的 key
     const hadKey =
       isArray(target) && isIntegerKey(key)
         ? Number(key) < target.length
         : hasOwn(target, key)
+    // 设置对应值
     const result = Reflect.set(target, key, value, receiver)
     // don't trigger if target is something up in the prototype chain of original
+    // 若目标对象是原始原型链上的内容（非自定义添加），则不触发依赖更新
     if (target === toRaw(receiver)) {
       if (!hadKey) {
+        // 目标对象不存在对应的 key，则为新增操作
         trigger(target, TriggerOpTypes.ADD, key, value)
       } else if (hasChanged(value, oldValue)) {
+        // 目标对象存在对应的值，则为修改操作
         trigger(target, TriggerOpTypes.SET, key, value, oldValue)
       }
     }
+    // 返回修改结果
     return result
   }
 }
@@ -204,6 +219,7 @@ function deleteProperty(target: object, key: string | symbol): boolean {
   const hadKey = hasOwn(target, key)
   const oldValue = (target as any)[key]
   const result = Reflect.deleteProperty(target, key)
+  // 目标对象上存在对应的 key ，并且能成功删除，才会触发依赖更新
   if (result && hadKey) {
     trigger(target, TriggerOpTypes.DELETE, key, undefined, oldValue)
   }

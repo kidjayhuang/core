@@ -114,6 +114,7 @@ class RefImpl<T> {
   }
 
   get value() {
+    // 将依赖收集到 dep 中，实际上就是一个 Set 类型
     trackRefValue(this)
     return this._value
   }
@@ -121,10 +122,15 @@ class RefImpl<T> {
   set value(newVal) {
     const useDirectValue =
       this.__v_isShallow || isShallow(newVal) || isReadonly(newVal)
+    // 获取原始数据
     newVal = useDirectValue ? newVal : toRaw(newVal)
+    // 通过 Object.is(value, oldValue) 判断新旧值是否一致，若不一致才需要进行更新
     if (hasChanged(newVal, this._rawValue)) {
+      // 保存原始值
       this._rawValue = newVal
+      // 更新为新的 value 值
       this._value = useDirectValue ? newVal : toReactive(newVal)
+      // 依赖更新，从 dep 中取出对应的 effect 函数依次遍历执行
       triggerRefValue(this, newVal)
     }
   }
